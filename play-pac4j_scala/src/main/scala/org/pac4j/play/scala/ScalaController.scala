@@ -15,15 +15,13 @@
  */
 package org.pac4j.play.scala
 
-import play.api._
+import _root_.scala.concurrent.Future
 import play.api.mvc._
 import org.pac4j.core.client._
 import org.pac4j.core.credentials._
 import org.pac4j.core.profile._
 import org.pac4j.core.util._
 import org.pac4j.play._
-import org.slf4j._
-import play.core.server.netty.RequestBodyHandler
 import org.pac4j.core.exception.TechnicalException
 
 /**
@@ -61,35 +59,36 @@ trait ScalaController extends Controller {
    * @param action
    * @return the current action to process or the redirection to the provider if the user is not authenticated
    */
-  protected def RequiresAuthentication[A](clientName: String, targetUrl: String, parser:BodyParser[A], isAjax: Boolean = false)(action: CommonProfile => Action[A]) = Action(parser) { request =>
-    logger.debug("Entering RequiresAuthentication")
-    var newSession = getOrCreateSessionId(request)
-    val sessionId = newSession.get(Constants.SESSION_ID).get
-    logger.debug("sessionId : {}", sessionId)
-    val profile = getUserProfile(request)
-    logger.debug("profile : {}", profile)
-    if (profile == null) {
-      val triedAuth = StorageHelper.get(sessionId, clientName + Constants.ATTEMPTED_AUTHENTICATION_SUFFIX).asInstanceOf[String]
-      logger.debug("triedAuth : {}", triedAuth);
-      if (CommonHelper.isNotBlank(triedAuth)) {
-        StorageHelper.remove(sessionId, clientName + Constants.ATTEMPTED_AUTHENTICATION_SUFFIX)
-        logger.error("authentication already tried -> forbidden")
-        Forbidden(Config.getErrorPage403()).as(HTML)
-      } else {
-        if (isAjax) {
-          Unauthorized(Config.getErrorPage401()).as(HTML)
+  protected def RequiresAuthentication[A](clientName: String, targetUrl: String, parser: BodyParser[A], isAjax: Boolean = false)(action: CommonProfile => Action[A]) = Action.async(parser) {
+    request =>
+      logger.debug("Entering RequiresAuthentication")
+      var newSession = getOrCreateSessionId(request)
+      val sessionId = newSession.get(Constants.SESSION_ID).get
+      logger.debug("sessionId : {}", sessionId)
+      val profile = getUserProfile(request)
+      logger.debug("profile : {}", profile)
+      if (profile == null) {
+        val triedAuth = StorageHelper.get(sessionId, clientName + Constants.ATTEMPTED_AUTHENTICATION_SUFFIX).asInstanceOf[String]
+        logger.debug("triedAuth : {}", triedAuth);
+        if (CommonHelper.isNotBlank(triedAuth)) {
+          StorageHelper.remove(sessionId, clientName + Constants.ATTEMPTED_AUTHENTICATION_SUFFIX)
+          logger.error("authentication already tried -> forbidden")
+          Future.successful(Forbidden(Config.getErrorPage403()).as(HTML))
         } else {
-          val redirectionUrl = getRedirectionUrl(request, newSession, clientName, targetUrl, true)
-          logger.debug("redirectionUrl : {}", redirectionUrl)
-          Redirect(redirectionUrl).withSession(newSession)
+          if (isAjax) {
+            Future.successful(Unauthorized(Config.getErrorPage401()).as(HTML))
+          } else {
+            val redirectionUrl = getRedirectionUrl(request, newSession, clientName, targetUrl, true)
+            logger.debug("redirectionUrl : {}", redirectionUrl)
+            Future.successful(Redirect(redirectionUrl).withSession(newSession))
+          }
         }
+      } else {
+        action(profile)(request)
       }
-    } else {
-      action(profile)(request)
-    }
   }
-  
-  protected def RequiresAuthentication(clientName: String, targetUrl: String = "", isAjax: Boolean = false)(action: CommonProfile => Action[AnyContent]): Action[AnyContent] = { 
+
+  protected def RequiresAuthentication(clientName: String, targetUrl: String = "", isAjax: Boolean = false)(action: CommonProfile => Action[AnyContent]): Action[AnyContent] = {
     RequiresAuthentication(clientName, targetUrl, parse.anyContent, isAjax)(action)
   }
 
