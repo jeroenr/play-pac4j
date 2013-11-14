@@ -23,6 +23,7 @@ import org.pac4j.core.profile._
 import org.pac4j.core.util._
 import org.pac4j.play._
 import org.pac4j.core.exception.TechnicalException
+import org.slf4j.LoggerFactory
 
 /**
  * This controller is the Scala controller to retrieve the user profile or the redirection url to start the authentication process.
